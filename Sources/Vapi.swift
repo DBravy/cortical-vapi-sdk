@@ -154,21 +154,12 @@ public final class Vapi: CallClientDelegate {
 
     public func send(message: VapiMessage) async throws {
         do {
-          // Use JSONEncoder to convert the message to JSON Data
-          let jsonData = try JSONEncoder().encode(message)
-          
-          // Debugging: Print the JSON data to verify its format (optional)
-          if let jsonString = String(data: jsonData, encoding: .utf8) {
-              print(jsonString)
-          }
-          
-          // Send the JSON data to all targets
-          try await self.call?.sendAppMessage(json: jsonData, to: .all)
-      } catch {
-          // Handle encoding error
-          print("Error encoding message to JSON: \(error)")
-          throw error // Re-throw the error to be handled by the caller
-      }
+            let jsonData = try JSONEncoder().encode(message)
+            try await self.call?.sendAppMessage(json: jsonData, to: .all)
+        } catch {
+            print("[Vapi] Error encoding message: \(error)")
+            throw error
+        }
     }
 
     public func setMuted(_ muted: Bool) async throws {
@@ -536,8 +527,14 @@ public final class Vapi: CallClientDelegate {
                 }
             }
 
-            let messageText = String(data: jsonData, encoding: .utf8)
-            print("Error parsing app message \"\(messageText ?? "")\": \(error.localizedDescription)")
+            // Only log truly unexpected parse failures, not known unhandled types
+            if let messageDictionary = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any],
+               let type = messageDictionary["type"] as? String {
+                // Silently ignore known types we don't handle
+                if !["conversation-update", "status-update", "speech-update"].contains(type) {
+                    print("[Vapi] Unhandled message type: \(type)")
+                }
+            }
         }
     }
 }
