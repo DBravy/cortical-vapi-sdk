@@ -6,6 +6,13 @@ import Foundation
 struct VapiMessageContent: Encodable {
     public let role: String
     public let content: String
+    public let toolCallId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case role
+        case content
+        case toolCallId = "tool_call_id"
+    }
 }
 
 // Define the top-level app message structure
@@ -13,9 +20,9 @@ public struct VapiMessage: Encodable {
     public let type: String
     let message: VapiMessageContent
 
-    public init(type: String, role: String, content: String) {
+    public init(type: String, role: String, content: String, toolCallId: String? = nil) {
         self.type = type
-        self.message = VapiMessageContent(role: role, content: content)
+        self.message = VapiMessageContent(role: role, content: content, toolCallId: toolCallId)
     }
 }
 
@@ -461,9 +468,9 @@ public final class Vapi: CallClientDelegate {
                 guard let parameters = functionCallDictionary[FunctionCall.CodingKeys.parameters.stringValue] as? [String: Any] else {
                     throw VapiError.decodingError(message: "App message missing parameters")
                 }
-                
-                
-                let functionCall = FunctionCall(name: name, parameters: parameters)
+
+                let id = functionCallDictionary[FunctionCall.CodingKeys.id.stringValue] as? String
+                let functionCall = FunctionCall(id: id, name: name, parameters: parameters)
                 event = Event.functionCall(functionCall)
             case .hang:
                 event = Event.hang
@@ -508,6 +515,8 @@ public final class Vapi: CallClientDelegate {
                     for toolCall in toolCalls {
                         if let function = toolCall["function"] as? [String: Any],
                            let name = function["name"] as? String {
+                            // Extract the tool call ID (at toolCall level, not function level)
+                            let toolCallId = toolCall["id"] as? String
                             // Parse arguments - can be JSON string OR already-parsed dictionary
                             var parameters: [String: Any] = [:]
                             if let argumentsDict = function["arguments"] as? [String: Any] {
@@ -519,7 +528,7 @@ public final class Vapi: CallClientDelegate {
                                 // JSON string that needs parsing
                                 parameters = parsedArguments
                             }
-                            let functionCall = FunctionCall(name: name, parameters: parameters)
+                            let functionCall = FunctionCall(id: toolCallId, name: name, parameters: parameters)
                             eventSubject.send(.functionCall(functionCall))
                         }
                     }

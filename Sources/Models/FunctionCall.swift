@@ -9,10 +9,12 @@ import Foundation
 
 public struct FunctionCall {
     enum CodingKeys: CodingKey {
+        case id
         case name
         case parameters
     }
-    
+
+    public let id: String?
     public let name: String
     public let parameters: [String: Any]
 }
