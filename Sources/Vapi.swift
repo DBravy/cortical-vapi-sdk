@@ -26,6 +26,36 @@ public struct VapiMessage: Encodable {
     }
 }
 
+// MARK: - Tool Call Result Types
+
+/// Individual tool call result
+public struct ToolCallResultItem: Encodable {
+    public let toolCallId: String
+    public let result: String
+
+    public init(toolCallId: String, result: String) {
+        self.toolCallId = toolCallId
+        self.result = result
+    }
+}
+
+/// Message for returning tool call results to Vapi
+/// Format: { "type": "tool-calls-result", "toolCallResult": [{ "toolCallId": "...", "result": "..." }] }
+public struct VapiToolCallResultMessage: Encodable {
+    public let type: String
+    public let toolCallResult: [ToolCallResultItem]
+
+    public init(toolCallId: String, result: String) {
+        self.type = "tool-calls-result"
+        self.toolCallResult = [ToolCallResultItem(toolCallId: toolCallId, result: result)]
+    }
+
+    public init(results: [ToolCallResultItem]) {
+        self.type = "tool-calls-result"
+        self.toolCallResult = results
+    }
+}
+
 public final class Vapi: CallClientDelegate {
     
     // MARK: - Supporting Types
@@ -158,6 +188,23 @@ public final class Vapi: CallClientDelegate {
             try await self.call?.sendAppMessage(json: jsonData, to: .all)
         } catch {
             print("[Vapi] Error encoding message: \(error)")
+            throw error
+        }
+    }
+
+    /// Send a tool call result back to Vapi
+    /// This uses the correct "tool-calls-result" message format that Vapi expects for synchronous tool responses
+    /// - Parameters:
+    ///   - toolCallId: The ID of the function call being responded to (from FunctionCall.id)
+    ///   - result: The result string to return to the LLM
+    public func sendToolCallResult(toolCallId: String, result: String) async throws {
+        let message = VapiToolCallResultMessage(toolCallId: toolCallId, result: result)
+        do {
+            let jsonData = try JSONEncoder().encode(message)
+            print("[Vapi] Sending tool-calls-result: \(String(data: jsonData, encoding: .utf8) ?? "nil")")
+            try await self.call?.sendAppMessage(json: jsonData, to: .all)
+        } catch {
+            print("[Vapi] Error sending tool call result: \(error)")
             throw error
         }
     }
