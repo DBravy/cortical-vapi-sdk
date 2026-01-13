@@ -494,6 +494,39 @@ public final class Vapi: CallClientDelegate {
             }
             eventSubject.send(event)
         } catch {
+            // If normal AppMessage parsing fails, try to parse as tool_calls format
+            // Vapi sends tool calls with type: "tool-calls" which isn't in AppMessage.MessageType
+            let (unescapedData, _) = unescapeAppMessage(jsonData)
+            if let messageDictionary = try? JSONSerialization.jsonObject(with: unescapedData, options: []) as? [String: Any] {
+                // Check for type: "tool-calls" (the format Vapi actually sends for client tools)
+                let isToolCallsType = (messageDictionary["type"] as? String) == "tool-calls"
+                let isToolCallsRole = (messageDictionary["role"] as? String) == "tool_calls"
+
+                if (isToolCallsType || isToolCallsRole),
+                   let toolCalls = messageDictionary["toolCalls"] as? [[String: Any]] {
+                    // Process each tool call
+                    for toolCall in toolCalls {
+                        if let function = toolCall["function"] as? [String: Any],
+                           let name = function["name"] as? String {
+                            // Parse arguments - can be JSON string OR already-parsed dictionary
+                            var parameters: [String: Any] = [:]
+                            if let argumentsDict = function["arguments"] as? [String: Any] {
+                                // Already a dictionary
+                                parameters = argumentsDict
+                            } else if let argumentsString = function["arguments"] as? String,
+                               let argumentsData = argumentsString.data(using: .utf8),
+                               let parsedArguments = try? JSONSerialization.jsonObject(with: argumentsData, options: []) as? [String: Any] {
+                                // JSON string that needs parsing
+                                parameters = parsedArguments
+                            }
+                            let functionCall = FunctionCall(name: name, parameters: parameters)
+                            eventSubject.send(.functionCall(functionCall))
+                        }
+                    }
+                    return
+                }
+            }
+
             let messageText = String(data: jsonData, encoding: .utf8)
             print("Error parsing app message \"\(messageText ?? "")\": \(error.localizedDescription)")
         }
